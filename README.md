@@ -1,4 +1,5 @@
-# abaqus_scripts
+# Abaqus scripts
+
 Python scripts to automate the boring stuff in everyday use of Simulia Abaqus
 
 
