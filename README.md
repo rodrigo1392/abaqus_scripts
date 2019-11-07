@@ -10,4 +10,4 @@ the File->Macro manager dialog box on the GUI.
 
 Looking forward to keep including new actions.
 
-Thanks four your attention.
+All sugestions are welcome.
