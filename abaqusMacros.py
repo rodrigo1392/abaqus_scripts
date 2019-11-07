@@ -8,13 +8,13 @@ import ConfigParser as configparser
 
 
 # Config input file
-config_file_path = 'config_macros.cfg'
+config_file_path = __file__.replace('.py', '.cfg').replace('.pyc', '.cfg').replace('.cfgc', '.cfg')
 cfg = configparser.ConfigParser()
 cfg.read(config_file_path)
 
+
 # Extract input data and process it
-#SECTION = cfg('CONFIG'
-CPUS_NUMBER = eval(cfg.get('CONFIG', 'CPUS_NUMBER'))
+CPUS_NUMBER = eval(cfg.get('MACROS', 'CPUS_NUMBER'))
 print('CPUS_NUMBER:', CPUS_NUMBER)
 
 
