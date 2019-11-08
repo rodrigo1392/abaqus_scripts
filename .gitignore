@@ -1,0 +1,8 @@
+.idea/
+*.iml
+__pycache__/
+abaqus.rpy*
+fort.7
+*.dmp
+*.pyc
+*.log

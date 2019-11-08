@@ -1,6 +1,13 @@
 # Abaqus scripts
-
 Python scripts to automate the boring stuff in everyday use of Simulia Abaqus
+
+# Launching Abaqus CAE
+The open_abaqus_2019.bat launches Abaqus CAE and calls for open_abaqus_2019.py script. You can create a link for the bat file and put it on the desktop for easier acces.
+The open python script does 3 things:
+
+- Modifies visuatization options.
+- Changes work directory to the one specified in the config_abaqus.cfg file
+- Imports abaqus_inside module, which containts functions to be used within Abaqus itself.
 
 
 # Macros

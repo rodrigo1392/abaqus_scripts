@@ -1,3 +1,13 @@
+""" Macros functions to be used in Abaqus environment.
+    abaqusMacros.cfg file is expected to be in the same folder as
+    this script.
+    Ideally, put both in the /site folder of your Abaqus installation,
+    otherwise you could place them in the working directory, but if
+    the interpreter switches to another directory, it won't be able
+    to read the macros.
+    
+    Developed by Rodrigo Rivero.
+    https://github.com/rodrigo1392"""
 from __future__ import print_function
 # -*- coding: mbcs -*-
 # Do not delete the following import lines
