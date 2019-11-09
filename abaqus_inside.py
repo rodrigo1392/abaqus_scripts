@@ -12,7 +12,7 @@ import os
 from tools_submodule.filesystem_tools import files_with_extension_lister
 
 
-def mesh_extract_set_nodes(i_set_name, i_odb):
+def mesh_extract_set_nodes(set_name, odb):
     """
     Returns a dict with a list of mesh nodes labels for all the set_name points as values,
     and the instance names as keys.
@@ -21,15 +21,18 @@ def mesh_extract_set_nodes(i_set_name, i_odb):
     Output: Dict with nodes labels of the input set.
     """
     print('Extracting nodes...')
-    node_set = i_odb.rootAssembly.nodeSets[i_set_name]
+    node_set = odb.rootAssembly.nodeSets[set_name]
     instances_names_list = [i for i in node_set.instanceNames]
     # nodes = i_odb.rootAssembly.nodeSets[i_set_name].nodes[0]
-    output = {i_set_name:
+    output = {set_name:
               {instance_name:
                collections.OrderedDict((node.label, node.coordinates) for
                                        node in node_set.nodes[num])
                for num, instance_name in enumerate(instances_names_list)}}
     return output
+
+
+#a=mesh_extract_set_nodes('CROWN')
 
 
 def models_modify_set_name(set_name, new_set_name):
@@ -43,28 +46,76 @@ def models_modify_set_name(set_name, new_set_name):
     return
 
 
-def odbs_show_calc_time_folder(odbs_folder):
+def odbs_get_calc_time_folder(odbs_folder, show=True,  recursive=False):
     """
-    Prints the calculation time for the all the odbs of the odbs_folder. """
-    for job_key in files_with_extension_lister(odbs_folder, 'odb'):
+    Gets calculation time for all Odb object in a folder.
+    Input: Folder to fetch Odb objects from.
+           show. Boolean, if True, print Odb short name and OdbJobtime.
+           recursive. Boolean, if True, search for Odb objects recursively.
+    Output: Dict of Odb names : OdbJobtime pairs.
+    """
+    output = {}
+    odb_list = files_with_extension_lister(odbs_folder, '.odb', full_name_option=True, sub_folders_option=recursive)
+    print(len(odb_list), 'Odb objects found')
+    for job_key in odb_list:
         try:
-            ODB = session.openOdb(odbs_folder + job_key + '.odb', readOnly=True)
-            calc_time = ODB.diagnosticData.jobTime
-            print(job_key, ': ', str(calc_time))
-            ODB.close()
+            odb = session.openOdb(job_key, readOnly=True)
+            output[job_key] = odbs_get_calc_time(odb, show)
+            odb.close()
         except:
-            print(job_key + ': not found')
+            print(job_key, 'NOT FOUND')
             pass
+    return output
+
+
+def odbs_get_calc_time(odb, show=True):
+    """
+    Gets calculation time for the Odb object.
+    Input: Odb to read the calculation data from.
+           show. Boolean, if True, print Odb short name and OdbJobtime.
+    Output: OdbJobtime object, with systemTime, userTime and wallclockTime
+            methods corresponding to values in seconds.
+    """
+    if isinstance(odb, str):
+        odb = session.odbs[odb]
+    calc_time = odb.diagnosticData.jobTime
+    if show:
+        odb_name = (os.path.splitext(os.path.basename(odb.name))[0])
+        print(odb_name, ': ', str(calc_time))
     return calc_time
 
 
-def odbs_show_calc_time(i_odb):
-    """ Shows the calculation time for the i_odb.
-    i_odb = Odb. To read the calculation data from. """
-    calc_time = i_odb.diagnosticData.jobTime
-    odb_name = (os.path.splitext(os.path.basename(i_odb.name))[0])
-    print(odb_name, ': ', str(calc_time))
-    return calc_time
+def odbs_retrieve_odb_name(number):
+    """
+    Returns name of the Odb object correspondent to a given position in an
+    alphabetically order list of session Odbs.
+    Input: number. Int of position of the Odb in the list.
+    Output: String of the corresponding Odb name.
+    """
+    keys = session.odbs.keys()
+    keys = sorted(keys)
+    selected_key = keys[number]
+    return selected_key
+
+
+def odbs_upgrade_odbs_folder(odbs_folder,  recursive=False):
+    """
+    Upgrades all Odb objects in odb_folder to current Abaqus CAE version.
+    Inputs:    :param odbs_folder:
+    :param recursive:
+    :return:
+    """
+    odb_list = files_with_extension_lister(odbs_folder, '.odb', full_name_option=True, sub_folders_option=recursive)
+    print(len(odb_list), 'Odb objects found')
+    temp_name = os.path.join(odbs_folder, 'temp_odb_name.odb')
+    for job_key in odb_list:
+        new_name = job_key
+        old_name = job_key.replace('.odb', '-old.odb')
+        session.upgradeOdb(job_key, temp_name)
+        # Rename old and new Odb files
+        os.rename(job_key, old_name)
+        os.rename(temp_name, new_name)
+    return
 
 
 def reports_create_fbody(i_first_chars, i_folder_reports, i_odb, i_step_number,

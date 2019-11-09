@@ -7,14 +7,14 @@
     Developed by Rodrigo Rivero.
     https://github.com/rodrigo1392"""
 
-
+from __future__ import print_function
 from abaqus import *
 from abaqusConstants import *
 from caeModules import *
 from driverUtils import *
 import ConfigParser as configparser
 import os
-import abaqus_inside
+from abaqus_inside import *
 
 
 # Config input file
@@ -24,6 +24,20 @@ cfg.read(config_file_path)
 
 # Extract input data and process it
 WORK_PATH = cfg.get('PATHS', 'WORK_DIRECTORY')
+DEFAULT_FILE = cfg.get('PATHS', 'DEFAULT_FILE')
+SCRIPT_2_EXECUTE = cfg.get('PATHS', 'SCRIPT_2_EXECUTE').replace('.py', '') + '.py'
+PATH_TO_SCRIPT = os.path.realpath(SCRIPT_2_EXECUTE)
+
+if DEFAULT_FILE:
+    print('OPENING', DEFAULT_FILE)
+    if '.odb' in DEFAULT_FILE:
+        try:
+            o1 = session.openOdb(name=DEFAULT_FILE)
+            session.viewports['Viewport: 1'].setValues(displayedObject=o1)
+            session.viewports['Viewport: 1'].odbDisplay.display.setValues(plotState=(CONTOURS_ON_DEF, ))
+        except:
+            print('COULD NOT OPEN', DEFAULT_FILE)
+            pass
 
 # Visualization config
 session.animationController.animationOptions.setValues(frameRate=55, relativeScaling=FULL_CYCLE)
@@ -83,3 +97,8 @@ session.viewports['Viewport: 1'].odbDisplay.basicOptions.setValues(numericForm=R
 # open Database
 # openMdb(pathName='')
 os.chdir(WORK_PATH)
+
+
+if SCRIPT_2_EXECUTE:
+    print('EXECUTING', PATH_TO_SCRIPT)
+    execfile(PATH_TO_SCRIPT)
