@@ -10,29 +10,26 @@ from collections import OrderedDict
 import collections
 import os
 from tools_submodule.filesystem_tools import files_with_extension_lister
+import ast
 
 
-def mesh_extract_set_nodes(set_name, odb):
+def mesh_extract_set_nodes(odb, set_name):
     """
-    Returns a dict with a list of mesh nodes labels for all the set_name points as values,
-    and the instance names as keys.
-    Inputs: set_name = str. Name of set which points labels are to be extracted.
-            odb = Odb object to read from.
+    Returns a dict with a tuple (set_name, instance_name) as keys and
+    a list of tuples (node label, node coordinates).
+    Inputs: odb = Odb object to read from.
+            set_name = str. Name of set which points labels are to be extracted.
     Output: Dict with nodes labels of the input set.
     """
-    print('Extracting nodes...')
+    odb = odbs_odbobject_normalizer(odb)
     node_set = odb.rootAssembly.nodeSets[set_name]
     instances_names_list = [i for i in node_set.instanceNames]
-    # nodes = i_odb.rootAssembly.nodeSets[i_set_name].nodes[0]
     output = {set_name:
               {instance_name:
                collections.OrderedDict((node.label, node.coordinates) for
                                        node in node_set.nodes[num])
                for num, instance_name in enumerate(instances_names_list)}}
     return output
-
-
-#a=mesh_extract_set_nodes('CROWN')
 
 
 def models_modify_set_name(set_name, new_set_name):
@@ -46,25 +43,44 @@ def models_modify_set_name(set_name, new_set_name):
     return
 
 
-def odbs_get_calc_time_folder(odbs_folder, show=True,  recursive=False):
+def odbs_odbobject_normalizer(odb_ish):
+    """
+    Returns an Odb object, based on what kind of variable the input is.
+    If it already is an Odb object, returns it.
+    If not, it looks for the corresponend Odb object within the opened Odbs,
+    if there's none, try to open it.
+    Input: odb_ish. Odb object or path to one
+    Output: Odb object.
+    """
+    if isinstance(odb_ish, str):
+        try:
+            odb = session.odbs[odb_ish]
+        except KeyError:
+            # Open odb
+            odb = session.openOdb(odb_ish, readOnly=False)
+    else:
+        odb = odb_ish
+    return odb
+
+
+def odbs_get_calc_time_folder(odbs_folder, show=True, recursive=False, close_odbs=True):
     """
     Gets calculation time for all Odb object in a folder.
     Input: Folder to fetch Odb objects from.
            show. Boolean, if True, print Odb short name and OdbJobtime.
            recursive. Boolean, if True, search for Odb objects recursively.
-    Output: Dict of Odb names : OdbJobtime pairs.
+           close_odbs. Boolean, if True, close all odbs after extracting info.
+    Output: Dict of Odb names : Dict of times pairs.
     """
     output = {}
     odb_list = files_with_extension_lister(odbs_folder, '.odb', full_name_option=True, sub_folders_option=recursive)
     print(len(odb_list), 'Odb objects found')
     for job_key in odb_list:
-        try:
-            odb = session.openOdb(job_key, readOnly=True)
-            output[job_key] = odbs_get_calc_time(odb, show)
-            odb.close()
-        except:
-            print(job_key, 'NOT FOUND')
-            pass
+        odb = odbs_odbobject_normalizer(job_key)
+        output[job_key] = odbs_get_calc_time(odb, show)
+    if close_odbs:
+        from abaqusMacros import odbs_close_all_odbs
+        odbs_close_all_odbs()
     return output
 
 
@@ -73,19 +89,20 @@ def odbs_get_calc_time(odb, show=True):
     Gets calculation time for the Odb object.
     Input: Odb to read the calculation data from.
            show. Boolean, if True, print Odb short name and OdbJobtime.
-    Output: OdbJobtime object, with systemTime, userTime and wallclockTime
-            methods corresponding to values in seconds.
+    Output: Dict object, with systemTime, userTime and wallclockTime as keys
+            and corresponding values in seconds as values.
     """
-    if isinstance(odb, str):
-        odb = session.odbs[odb]
+    odbs_odbobject_normalizer(odb)
+    # Convert to dict
     calc_time = odb.diagnosticData.jobTime
+    output = ast.literal_eval(str(calc_time)[1:-1])
     if show:
         odb_name = (os.path.splitext(os.path.basename(odb.name))[0])
         print(odb_name, ': ', str(calc_time))
-    return calc_time
+    return output
 
 
-def odbs_retrieve_odb_name(number):
+def odbs_retrieve_odb_name(number, show_all=False):
     """
     Returns name of the Odb object correspondent to a given position in an
     alphabetically order list of session Odbs.
@@ -95,253 +112,49 @@ def odbs_retrieve_odb_name(number):
     keys = session.odbs.keys()
     keys = sorted(keys)
     selected_key = keys[number]
+    if show_all:
+        print('Currently opened Odbs', keys)
     return selected_key
 
 
-def odbs_upgrade_odbs_folder(odbs_folder,  recursive=False):
+def odbs_retrieve_set_name(odb, number, show_all=False):
+    """
+    Returns name of set correspondent to a given position in an
+    alphabetically order list of Odb sets.
+    Input: odb. OdbObject or path to it.
+           number. Int of position of the set in the list.
+    Output: String of the corresponding set name.
+    """
+    odb = odbs_odbobject_normalizer(odb)
+    keys = odb.rootAssembly.nodeSets.keys()
+    keys = sorted(keys)
+    selected_key = keys[number]
+    if show_all:
+        print('Available node sets', keys)
+    return selected_key
+
+
+def odbs_upgrade_odbs_folder(odbs_folder, recursive=False, print_every=1):
     """
     Upgrades all Odb objects in odb_folder to current Abaqus CAE version.
-    Inputs:    :param odbs_folder:
-    :param recursive:
-    :return:
+    Inputs: odbs_folder. Folder to fetch Odb objects from.
+            recursive. Boolean, if True, search for Odb objects recursively.
+            print_every. Int that defines intervals for printing info.
     """
+    import odbAccess
     odb_list = files_with_extension_lister(odbs_folder, '.odb', full_name_option=True, sub_folders_option=recursive)
-    print(len(odb_list), 'Odb objects found')
+    upgradable_odb_list = [i for i in odb_list if odbAccess.isUpgradeRequiredForOdb(i)]
+    print(len(odb_list), 'Odb objects found', len(upgradable_odb_list), 'require upgrade')
     temp_name = os.path.join(odbs_folder, 'temp_odb_name.odb')
-    for job_key in odb_list:
+    for job_number, job_key in enumerate(upgradable_odb_list):
+        # Option to print less
+        if divmod(job_number, print_every)[1]==0:
+             print('Processing', job_key, job_number + 1, 'of', len(upgradable_odb_list))
         new_name = job_key
         old_name = job_key.replace('.odb', '-old.odb')
         session.upgradeOdb(job_key, temp_name)
         # Rename old and new Odb files
         os.rename(job_key, old_name)
         os.rename(temp_name, new_name)
+    print('DONE')
     return
-
-
-def reports_create_fbody(i_first_chars, i_folder_reports, i_odb, i_step_number,
-                         i_frame_number, i_surfaces_list):
-    """ Creates an Abaqus Freebody Report file with the freebodycut
-        created during the process.
-        i_first_chars = srt. First chars to add to the report name.
-        i_folder_reports = srt. Path to save the Report to
-        i_odb = Odb. File to read from.
-        i_step_number = int. Step number to read from.
-        i_frame_number = int. Frame number to read from.
-        i_surfaces_list = List. Surface to make the body cut from. """
-    # Show ODB
-    session.viewports['Viewport: 1'].setValues(displayedObject=i_odb)
-    odb_name = (os.path.splitext(os.path.basename(i_odb.name))[0])
-    # Create bodycut
-    leaf = dgo.LeafFromSurfaceSets(surfaceSets=i_surfaces_list)
-    session.FreeBodyFromFaces(name='FreeBody-1', faces=leaf,
-                              summationLoc=SPECIFY,
-                              summationPoint=(0.0, 0.0, 0.0),
-                              componentResolution=NORMAL_TANGENTIAL)
-    session.viewports['Viewport: 1'].odbDisplay.setValues\
-        (freeBodyNames=('FreeBody-1', ), freeBody=ON)
-    # Create the report file
-    report_name = ''.join([i_folder_reports, i_first_chars, odb_name, '.rpt'])
-    session.writeFreeBodyReport(fileName=report_name, append=OFF,
-                                step=i_step_number, frame=i_frame_number,
-                                stepFrame=ALL, odb=i_odb)
-    return report_name, odb_name
-
-
-def reports_create_field(i_first_chars, i_folder_reports, i_odb, i_step_number,
-                         i_frame_number, i_output_position, i_variable):
-    """ Creates an Abaqus Field Report file for the RF variable.
-        i_first_chars = srt. First chars to add to the report name.
-        i_folder_reports = srt. Path to save the Report to
-        i_odb = Odb. File to read from.
-        i_step_number = int. Step number to read from.
-        i_frame_number = int. Frame number to read from.
-        i_ouput_position = Abaqus keyword.
-        i_variable = Abaqus keyword"""
-    # Show ODB
-    session.viewports['Viewport: 1'].setValues(displayedObject=i_odb)
-    odb_name = (os.path.splitext(os.path.basename(i_odb.name))[0])
-    # Create the report file
-    report_name = ''.join([i_folder_reports, i_first_chars, odb_name, '.rpt'])
-    session.writeFieldReport(fileName=report_name, append=OFF,
-                             sortItem='Node Label', odb=i_odb,
-                             step=i_step_number, frame=i_frame_number,
-                             outputPosition=i_output_position,
-                             variable=i_variable)
-    return report_name
-
-
-def reports_create_xydata(i_first_chars, i_xydata_list, i_folder_reports,
-                          i_odb):
-    """ Creates an Abaqus XY Report file with the xyData corresponding
-        to the list given by i_xydata_list.
-        i_first_chars = srt. First chars to add to the report name.
-        i_xydata_list = list of srt. Names of the xyData objects.
-        i_folder_reports = srt. Path to save the Report to .
-        i_odb = Odb. File to read from. """
-    print('Creating XYdata Report...')
-    # Show ODB
-    session.viewports['Viewport: 1'].setValues(displayedObject=i_odb)
-    session.xyReportOptions.setValues(totals=ON, minMax=ON)
-    odb_name = (os.path.splitext(os.path.basename(i_odb.name))[0])
-    # Extract the xyData
-    xy_objects = {}
-    for xydata_name in i_xydata_list:
-        # Copies the xyData with a much more simplier name,
-        # in order to make the Report file more readable
-        dash_pos = [pos for pos, char in enumerate(xydata_name) if char == '-']
-        new_xydata_name = xydata_name[(dash_pos[(len(dash_pos) - 1)] + 1):]
-        if len(new_xydata_name) > 17:
-            dash_pos = [pos for pos, char in enumerate(new_xydata_name) if char == '_']
-            to_delete = new_xydata_name[dash_pos[0] + 2: dash_pos[-1] - 1]
-            new_xydata_name = new_xydata_name.replace(to_delete, '')
-        # If it already exists it has to be eliminated in order to
-        # place the new one
-        if new_xydata_name in session.xyDataObjects.keys():
-            del session.xyDataObjects[new_xydata_name]
-        session.XYData(name=new_xydata_name,
-                       objectToCopy=session.xyDataObjects[xydata_name])
-        xy_objects[new_xydata_name] = session.xyDataObjects[new_xydata_name]
-    xy_objects = collections.OrderedDict(sorted(xy_objects.items()))
-    # Create the report file
-    report_name = ''.join([i_folder_reports, i_first_chars, odb_name, '.rpt'])
-    session.writeXYReport(fileName=report_name, appendMode=OFF,
-                          xyData=xy_objects.values())
-    return report_name
-
-
-def xydata_create_t_history_point(i_odb, i_set_dict, i_steps_names_list,
-                                  i_variables_list):
-    """ Creates a xydata from the values for the point of interest.
-        i_odb =  OdbObject. Odb to read from.
-        i_set_dict = dict. Labels to extract for.
-        i_steps_names_list = list of str. Steps a to read in.
-        i_variables_list = listof str. Variables to be extracted."""
-    var_description_dict = {'Spatial acceleration': ['A1', 'A2', 'A3'],
-                            'Spatial displacement': ['U1', 'U2', 'U3'],
-                            'Spatial velocity': ['V1', 'V2', 'V3'],
-                            'Pore or Acoustic Pressure': ['POR'],
-                            'Reaction force': ['RF1', 'RF2', 'RF3'],
-                            'Total force on the surface': ['SOF1', 'SOF2',
-                                                           'SOF3'],
-                            'Total moment on the surface': ['SOM1', 'SOM2',
-                                                            'SOM3']}
-    print('Creating History XYdata for a Point...')
-    odb_name = (os.path.splitext(os.path.basename(i_odb.name))[0])
-    instances = i_odb.rootAssembly.instances
-    #points_meta = {k:v.description for k,v in step.historyRegions[].historyOutputs}
-    xydata_names_list = []
-    set_name = i_set_dict.keys()[0]
-    for instance_name, labels_dict in i_set_dict[set_name].items():
-        for variable in i_variables_list:
-            for label in labels_dict.keys():
-                xydata_name = ''.join([odb_name, '-P', str(label), '_',
-                                       set_name, '_', variable])
-                xydata_names_list.append(xydata_name)
-                for k, v in var_description_dict.items():
-                    if variable in v:
-                        var_description = k
-                if len(instances) > 1:
-                    session.\
-                     XYDataFromHistory(name=xydata_name, odb=i_odb,
-                                       outputVariableName=''.join([var_description, ': ',
-                                                                   variable, ' PI: ', instance_name, ' Node ',
-                                                                   str(label), ' in NSET ',
-                                                                   set_name]),
-                                       steps=i_steps_names_list,
-                                       __linkedVpName__='Viewport: 1')
-                else:
-                    session.\
-                     XYDataFromHistory(name=xydata_name, odb=i_odb,
-                                       outputVariableName=''.join([var_description, ': ',
-                                                                   variable, ' at Node ',
-                                                                   str(label), ' in NSET ',
-                                                                   set_name]),
-                                       steps=i_steps_names_list,
-                                       __linkedVpName__='Viewport: 1')
-    return xydata_names_list
-
-
-def xydata_create_t_history_sum(i_odb, i_set_dict, i_steps_names_list,
-                                i_variables_list):
-    """ Creates a xydata from the Sum of the i_variable value of each
-        point in the i_set_dict against time, for all the steps contained
-        in i_steps_names_list.
-        i_odb = OdbObject. Odb to read from.
-        i_set_dict = dict. Labels to extract for.
-        i_steps_names_list = list of str. Steps a to read in.
-        i_variable = str. Variable to be Summed. """
-    print('Creating History Sum XYdata for a Set...')
-    odb_name = (os.path.splitext(os.path.basename(i_odb.name))[0])
-    var_description_dict = {'Spatial acceleration': ['A1', 'A2', 'A3'],
-                            'Spatial displacement': ['U1', 'U2', 'U3'],
-                            'Spatial velocity': ['V1', 'V2', 'V3'],
-                            'Pore or Acoustic Pressure': ['POR'],
-                            'Reaction force': ['RF1', 'RF2', 'RF3'],
-                            'Total force on the surface': ['SOF1', 'SOF2',
-                                                           'SOF3'],
-                            'Total moment on the surface':['SOM1', 'SOM2',
-                                                           'SOM3']}
-    # Create variables in loop with the results of each point
-    instances = i_odb.rootAssembly.instances
-    xydata_names_list = []
-    set_name = i_set_dict.keys()[0]
-    for instance_name, labels_set in i_set_dict[set_name].items():
-        for variable in i_variables_list:
-            xydata_name = ''.join([odb_name, '-', set_name, '_', variable])
-            xydata_names_list.append(xydata_name)
-            for k, v in var_description_dict.items():
-                if variable in v:
-                    var_description = k
-            if len(instances) > 1:
-                suma = sum([xyPlot.XYDataFromHistory(odb=i_odb,\
-                                outputVariableName=''.join([var_description, ': ',
-                                                                variable, ' PI: ', instance_name, ' Node ',
-                                                                str(label), ' in NSET ',
-                                                                set_name]),
-                            steps=i_steps_names_list, suppressQuery=True,
-                            __linkedVpName__='Viewport: 1') for label in labels_set])
-            else:
-                suma = sum([xyPlot.XYDataFromHistory(odb=i_odb,\
-                                outputVariableName=''.join([var_description, ': ', variable,
-                                                    ' at Node ', str(label), ' in NSET ',
-                                                    set_name]),
-                            steps=i_steps_names_list, suppressQuery=True,
-                            __linkedVpName__='Viewport: 1') for label in labels_set])
-            session.XYData(name=xydata_name, objectToCopy=suma)
-    # Clean temporal data
-    for xydata_key in session.xyDataObjects.keys():
-        if xydata_key[0:5] == '_temp':
-            if xydata_key != xydata_name:
-                del session.xyDataObjects[xydata_key]
-    return xydata_names_list
-
-
-def xydata_create_t_history_section(i_odb, i_section_name, i_set_name,
-                                    i_steps_names_list, i_var_description,
-                                    i_variable):
-    """ Creates a xydata from the values for the point of interest.
-        i_odb =  OdbObject. Odb to read from.
-        i_set_name = srt. Name of the Surface Set.
-        i_section_name = srt. Name of the Integrated Section.
-        i_steps_names_list = list of str. Steps a to read in.
-        i_var_description= str. Abaqus variable for constructing
-                                the extraction op.
-        i_variable = str. Variable to be Summed
-        Possible description and its variables:
-        'Total force on the surface' - SOF1, SOF2, SOF3, SOFM.
-        'Total moment on the surface' - SOM1, SOM2, SOM3, SOMM.  """
-    print('Creating History XYdata for a Integrated Section...')
-    odb_name = (os.path.splitext(os.path.basename(i_odb.name))[0])
-    xydata_name = ''.join([odb_name, '_', i_set_name, '-', i_section_name, '_',
-                          i_variable])
-    session.XYDataFromHistory\
-        (name=xydata_name, odb=i_odb,
-         outputVariableName=''.join([i_var_description, ': ', i_variable,
-                                     '  on section ', i_section_name,
-                                     ' in SSET ', i_set_name]),
-         steps=i_steps_names_list, __linkedVpName__='Viewport: 1')
-    # Change the sign of the result
-    f_xy1 = session.xyDataObjects[xydata_name] * -1
-    del session.xyDataObjects[xydata_name]
-    session.xyDataObjects.changeKey(f_xy1.name, xydata_name)
-    return xydata_name

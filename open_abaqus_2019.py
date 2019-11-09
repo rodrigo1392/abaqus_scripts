@@ -24,20 +24,29 @@ cfg.read(config_file_path)
 
 # Extract input data and process it
 WORK_PATH = cfg.get('PATHS', 'WORK_DIRECTORY')
+OPEN_DEFAULT_FILE = eval(cfg.get('PATHS', 'OPEN_DEFAULT_FILE'))
+EXECUTE_SCRIPT = eval(cfg.get('PATHS', 'EXECUTE_SCRIPT'))
+IMPORT_DEVELOP_FILE = eval(cfg.get('PATHS', 'IMPORT_DEVELOP_FILE'))
 DEFAULT_FILE = cfg.get('PATHS', 'DEFAULT_FILE')
 SCRIPT_2_EXECUTE = cfg.get('PATHS', 'SCRIPT_2_EXECUTE').replace('.py', '') + '.py'
 PATH_TO_SCRIPT = os.path.realpath(SCRIPT_2_EXECUTE)
+DEVELOP_FILE = cfg.get('PATHS', 'DEVELOP_FILE')
 
-if DEFAULT_FILE:
+
+if OPEN_DEFAULT_FILE and DEFAULT_FILE:
     print('OPENING', DEFAULT_FILE)
     if '.odb' in DEFAULT_FILE:
         try:
             o1 = session.openOdb(name=DEFAULT_FILE)
             session.viewports['Viewport: 1'].setValues(displayedObject=o1)
             session.viewports['Viewport: 1'].odbDisplay.display.setValues(plotState=(CONTOURS_ON_DEF, ))
+            ODB = session.odbs[DEFAULT_FILE]
         except:
             print('COULD NOT OPEN', DEFAULT_FILE)
             pass
+
+if IMPORT_DEVELOP_FILE:
+    DEVELOP = DEVELOP_FILE
 
 # Visualization config
 session.animationController.animationOptions.setValues(frameRate=55, relativeScaling=FULL_CYCLE)
@@ -98,7 +107,6 @@ session.viewports['Viewport: 1'].odbDisplay.basicOptions.setValues(numericForm=R
 # openMdb(pathName='')
 os.chdir(WORK_PATH)
 
-
-if SCRIPT_2_EXECUTE:
+if EXECUTE_SCRIPT:
     print('EXECUTING', PATH_TO_SCRIPT)
     execfile(PATH_TO_SCRIPT)
