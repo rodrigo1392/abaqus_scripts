@@ -1,3 +1,6 @@
+print('***** EXECUTING DEVELOP FILE *****')
+
+
 def mesh_extract_set_nodes(odb, set_name):
     """
     Returns a dict with a list of mesh nodes labels for all the set_name points as values,
@@ -24,5 +27,10 @@ def mesh_extract_set_nodes(odb, set_name):
     #output = odb.rootAssembly.nodeSets[set_name].nodes[0][0]
     return output
 
-a = mesh_extract_set_nodes(odbs_retrieve_odb_name(0), 'CROWN_OUT')
-print(a, type(a))
+
+import os
+a=os.getcwd()
+print(a)
+
+#a = mesh_extract_set_nodes(odbs_retrieve_odb_name(0), 'CROWN_OUT')
+#print(a, type(a))
