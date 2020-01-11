@@ -32,5 +32,7 @@ import os
 a=os.getcwd()
 print(a)
 
+print('yes')
+
 #a = mesh_extract_set_nodes(odbs_retrieve_odb_name(0), 'CROWN_OUT')
 #print(a, type(a))

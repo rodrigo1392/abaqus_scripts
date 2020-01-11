@@ -14,6 +14,8 @@ from caeModules import *
 from driverUtils import *
 import ConfigParser as configparser
 import os
+
+os.chdir('./abaqus_scripts')
 from abaqus_inside import *
 
 
@@ -45,8 +47,12 @@ if OPEN_DEFAULT_FILE and DEFAULT_FILE:
             print('COULD NOT OPEN', DEFAULT_FILE)
             pass
 
+
 if IMPORT_DEVELOP_FILE:
-    DEVELOP = DEVELOP_FILE
+    def dev():
+       global DEVELOP_FILE
+       execfile(DEVELOP_FILE)
+
 
 # Visualization config
 #session.animationController.animationOptions.setValues(frameRate=55) #, relativeScaling=FULL_CYCLE)
