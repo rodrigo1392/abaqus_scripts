@@ -13,23 +13,37 @@ from tools_submodule.filesystem_tools import files_with_extension_lister
 import ast
 
 
-def mesh_extract_set_nodes(odb, set_name):
+def models_mesh_stats(model_name, total_stats=False):
     """
-    Returns a dict with a tuple (set_name, instance_name) as keys and
-    a list of tuples (node label, node coordinates).
-    Inputs: odb = Odb object to read from.
-            set_name = str. Name of set which points labels are to be extracted.
-    Output: Dict with nodes labels of the input set.
+    Print information about mesh amount of elements, instance by instance.
+    Input: model_name. String of model name.
+           total_stats. Option to print whole model stats.
     """
-    odb = odbs_odbobject_normalizer(odb)
-    node_set = odb.rootAssembly.nodeSets[set_name]
-    instances_names_list = [i for i in node_set.instanceNames]
-    output = {set_name:
-              {instance_name:
-               collections.OrderedDict((node.label, node.coordinates) for
-                                       node in node_set.nodes[num])
-               for num, instance_name in enumerate(instances_names_list)}}
-    return output
+    element_types = ['numLineElems',  # 'numMeshedRegions',
+                     'numNodes', 'numPointElems', 'numPyramidElems', 'numQuadElems',
+                     'numTetBoundaryElems', 'numTetElems', 'numTriElems', 'numWedgeElems']
+    print('*****', '\nModel:', model_name, '\n')
+    model = mdb.models[model_name]
+    for inst_key, instance in model.rootAssembly.instances.items():
+        stats = model.rootAssembly.getMeshStats((instance,))
+        print('\nInstance:', inst_key)
+        try:
+            for element_type in element_types:
+                number_of_elements = eval('stats.' + element_type)
+                if number_of_elements:
+                    print(element_type, ':', number_of_elements)
+        except AttributeError:
+            pass
+    if total_stats:
+        tot_stats = model.rootAssembly.getMeshStats((tuple(model.rootAssembly.instances.values())))
+        print('\n--- TOTAL ---')
+        try:
+            for element_type in element_types:
+                number_of_elements = eval('tot_stats.' + element_type)
+                if number_of_elements:
+                    print(element_type, ':', number_of_elements)
+        except AttributeError:
+            pass
 
 
 def models_modify_set_name(set_name, new_set_name):
@@ -43,7 +57,16 @@ def models_modify_set_name(set_name, new_set_name):
     return
 
 
-def odbs_odbobject_normalizer(odb_ish):
+def models_change_name(model_name, new_name):
+    """
+    Renames model of current database.
+    Input: model_name. String of model name.
+           new_name. String of new model name.
+    """
+    mdb.models.changeKey(fromName=model_name, toName=new_name)
+
+
+def odbs_normalize_object(odb_ish):
     """
     Returns an Odb object, based on what kind of variable the input is.
     If it already is an Odb object, returns it.
@@ -63,7 +86,7 @@ def odbs_odbobject_normalizer(odb_ish):
     return odb
 
 
-def odbs_get_calc_time_folder(odbs_folder, show=True, recursive=False, close_odbs=True):
+def odbs_calc_time_from_folder(odbs_folder, show=True, recursive=False, close_odbs=True):
     """
     Gets calculation time for all Odb object in a folder.
     Input: Folder to fetch Odb objects from.
@@ -76,15 +99,15 @@ def odbs_get_calc_time_folder(odbs_folder, show=True, recursive=False, close_odb
     odb_list = files_with_extension_lister(odbs_folder, '.odb', full_name_option=True, sub_folders_option=recursive)
     print(len(odb_list), 'Odb objects found')
     for job_key in odb_list:
-        odb = odbs_odbobject_normalizer(job_key)
-        output[job_key] = odbs_get_calc_time(odb, show)
+        odb = odbs_normalize_object(job_key)
+        output[job_key] = odbs_calc_time(odb, show)
     if close_odbs:
         from abaqusMacros import odbs_close_all_odbs
         odbs_close_all_odbs()
     return output
 
 
-def odbs_get_calc_time(odb, show=True):
+def odbs_calc_time(odb, show=True):
     """
     Gets calculation time for the Odb object.
     Input: Odb to read the calculation data from.
@@ -92,7 +115,7 @@ def odbs_get_calc_time(odb, show=True):
     Output: Dict object, with systemTime, userTime and wallclockTime as keys
             and corresponding values in seconds as values.
     """
-    odbs_odbobject_normalizer(odb)
+    odbs_normalize_object(odb)
     # Convert to dict
     calc_time = odb.diagnosticData.jobTime
     output = ast.literal_eval(str(calc_time)[1:-1])
@@ -102,7 +125,33 @@ def odbs_get_calc_time(odb, show=True):
     return output
 
 
-def odbs_retrieve_odb_name(number, show_all=False):
+def mesh_extract_set_nodes(odb, set_name):
+    """
+    Returns a dict with (set name, instance name) as keys and a list of (mesh nodes labels, nodes coordinates)
+    for all the points corresponding to set_name.
+    Inputs: odb. Odb object to read from.
+            set_name. String with name of set which points labels are to be extracted.
+    Output: Dict with nodes labels and coordinates.
+    """
+    import abaqus_inside
+    print('Extracting nodes...')
+    odb = abaqus_inside.odbs_normalize_object(odb)
+    node_set = odb.rootAssembly.nodeSets[set_name]
+    instances_names_list = [i for i in node_set.instanceNames]
+    """
+    output = {set_name:
+              {instance_name:
+               collections.OrderedDict((node.label, node.coordinates) for
+                                       node in node_set.nodes[num])
+               for num, instance_name in enumerate(instances_names_list)}}
+    """
+    output = {(set_name, instance_name):
+              [(node.label, node.coordinates) for node in node_set.nodes[num]]
+              for num, instance_name in enumerate(instances_names_list)}
+    return output
+
+
+def odbs_retrieve_name(number, show_all=False):
     """
     Returns name of the Odb object correspondent to a given position in an
     alphabetically order list of session Odbs.
@@ -125,7 +174,7 @@ def odbs_retrieve_set_name(odb, number, show_all=False):
            number. Int of position of the set in the list.
     Output: String of the corresponding set name.
     """
-    odb = odbs_odbobject_normalizer(odb)
+    odb = odbs_normalize_object(odb)
     keys = odb.rootAssembly.nodeSets.keys()
     keys = sorted(keys)
     selected_key = keys[number]
@@ -134,7 +183,7 @@ def odbs_retrieve_set_name(odb, number, show_all=False):
     return selected_key
 
 
-def odbs_upgrade_odbs_folder(odbs_folder, recursive=False, print_every=1):
+def odbs_upgrade_from_folder(odbs_folder, recursive=False, print_every=1):
     """
     Upgrades all Odb objects in odb_folder to current Abaqus CAE version.
     Inputs: odbs_folder. Folder to fetch Odb objects from.
@@ -158,3 +207,49 @@ def odbs_upgrade_odbs_folder(odbs_folder, recursive=False, print_every=1):
         os.rename(temp_name, new_name)
     print('DONE')
     return
+
+
+def parts_2d_assign_properties(model_name, section_name, first_letters=None):
+    """
+    Assigns section property to parts contained in model_name model.
+    Input: model_name. String of model name.
+           section_name. String of section name to be assigned.
+           first_letters. If entered, look for parts that start with them.
+    """
+    parts_list = [i for i in mdb.models[model_name].parts.values()]
+    if first_letters:
+        parts_list = [i for i in parts_list if i.name.startswith(first_letters)]
+    for part in parts_list:
+        faces = part.faces.getSequenceFromMask(mask=('[#1 ]',), )
+        region = part.Set(faces=faces, name='BODY')
+        part.SectionAssignment(region=region, sectionName=section_name, offset=0.0, offsetType=MIDDLE_SURFACE,
+                               offsetField='', thicknessAssignment=FROM_SECTION)
+
+
+def parts_export_iges(model_name, path, first_letters=None):
+    """
+    Exports selected parts as iges files.
+    Input: model_name. String of model name.
+           path. Path to export parts to.
+           first_letters. If entered, look for parts that start with them.
+    """
+    parts_list = [i for i in mdb.models[model_name].parts.values()]
+    if first_letters:
+        parts_list = [i for i in parts_list if i.name.startswith(first_letters)]
+    for part in parts_list:
+        part.writeIgesFile(fileName=path + r"\\" + part.name + '.igs', flavor=STANDARD)
+
+
+def parts_clean_properties(model_name, first_letter=None):
+    """
+    Deletes all section property assignments to parts contained in model_name model.
+    Input: model_name. String of model name.
+           first_letters. If entered, look for parts that start with them.
+    """
+    parts_list = [i for i in mdb.models[model_name].parts.values()]
+    if first_letter:
+        parts_list = [i for i in parts_list if i.name.startswith(first_letter)]
+    for part in parts_list:
+        assignments_number = len(part.sectionAssignments)
+        for i in range(0, assignments_number):
+            del part.sectionAssignments[0]
