@@ -1,6 +1,10 @@
 print('***** EXECUTING DEVELOP FILE *****')
-import abaqus_inside
+#import abaqus_inside
 import collections
+import tools_submodule.filesystem_tools as ft
+import abaqus_outside as abo
+import pprint
+import os
 
 
 def models_upgrade_from_folder(models_folder, recursive=False, print_every=1):
@@ -10,7 +14,8 @@ def models_upgrade_from_folder(models_folder, recursive=False, print_every=1):
             recursive. Boolean, if True, search for Mdb objects recursively.
             print_every. Int that defines intervals for printing info.
     """
-    models_list = files_with_extension_lister(models_folder, '.cae', full_name_option=True, sub_folders_option=recursive)
+    models_list = ft.files_with_extension_lister(models_folder, '.cae', full_name_option=True,
+                                                 sub_folders_option=recursive)
     #upgradable_models_list = [i for i in models_list if odbAccess.isUpgradeRequiredForMdb(i)]
     print(len(models_list), 'Mdb objects found', len(models_list), 'require upgrade')
     temp_name = os.path.join(models_folder, 'temp_mdb_name.cae')
@@ -21,18 +26,17 @@ def models_upgrade_from_folder(models_folder, recursive=False, print_every=1):
         new_name = model_key
         old_name = model_key.replace('.cae', '-old.cae')
         print(('acaaaaaa', model_key, temp_name))
-        
         upgradeMdb(r'C:\abaqus_data\Models\Contact\BLOCKS_CONTACT.cae', temp_name)
         # Rename old and new Odb files
         os.rename(model_key, old_name)
         os.rename(temp_name, new_name)
     print('DONE')
     return
-    
-    
-import os
-#a=os.getcwd()
-#print(a)
 
-a = models_upgrade_from_folder(r'C:\abaqus_data\Models\Contact', 0)
-print(a, type(a))
+
+#c = modify_gather_script(r'C:\abaqus_temp\abaqus_scripts/IDL_2D_1M_ALPHA_DYN.py',
+#                         'C:/abaqus_results/IDL_2D_1M_ALPHA_DYN', 1)
+#run_abaqus_subprocess(c, gui=0, analysis_folder=r'C:/abaqus_results', verbose=1)
+
+#to_run = abo.parametric_create_files('IDL_2D_1M_ALPHA_DYN.cfg')
+#abo.run_psf(to_run)

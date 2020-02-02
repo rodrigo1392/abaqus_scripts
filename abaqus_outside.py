@@ -2,94 +2,195 @@
     Developed by Rodrigo Rivero.
     https://github.com/rodrigo1392"""
 
+import ast
 import configparser
-from collections import OrderedDict
-import collections
+import io
+import multiprocessing
+import numpy as np
 import os
+import pandas as pd
+import pprint
+import subprocess
+import shutil
+import tools_submodule.databases_tools as db
+import tools_submodule.filesystem_tools as ft
+import tools_submodule.strings_tools as st
+from pathlib import Path
 
 
-def abaqus_process(list_scripts_folder, script_name, options_input, show_process_option):
-    """ Runs an script in an Abaqus cae instance.
-        list_scripts_folder = Path.
-        script_name = str. Script name to be run.
-        options_input = dict. Paths and Files names to be passed to the script
-        show_process_option = Boolean. If True, shows the CAE window. """
-    import subprocess
-    with open(PATH_TEMP, 'wb') as fileobject:
-        pickle.dump(options_input, fileobject)
-    # ******************** Launch abaqus subprocess *******************
-    clock_start = clock()
-    os.chdir(list_scripts_folder)
-    if show_process_option is True:
-        proc_state = subprocess.call('abaqus cae -script ' + script_name,
-                                     shell=True)
-    else:
-        proc_state = subprocess.call('abaqus cae noGUI=' + script_name,
-                                     shell=True)
-    if proc_state == 0:
-        print ('Process well runned')
-    print('Abaqus time elapsed: ',
-          str(round(clock() - clock_start, 2)), ' s')
-    # *****************************************************************
-    return proc_state
+def parametric_create_files(config_file):
+    """
+    Generate files necessary for parametric analysis within abaqus.
+    Input: config_file. Path of config file for the study.
+    """
 
+    def parametric_csv_builder(study_nam, parameters_list, max_values, min_values, normal_values,
+                               sample_size=10, analysis_folder=None, overwrite_csv=False,
+                               study_folde=None, **kwargs):
+        """
+        Creates a csv file with values of input parameters for an Abaqus parametric analysis.
+        Inputs: study_nam. Name of the parametric analysis project.
+                parameters_list. List of parameters for the study.
+                max_values. List of maximum values of each parameter.
+                min_values. List of minimum values of each parameter.
+                normal_values. List of reference values of each parameter.
+                sample_size. Size of sampling vector when studying only one parameter.
+                analysis_folder. Path of folder to copy the output to.
+                overwrite_csv. Boolean, if True, allows for output overwriting.
+                study_folde. Path to copy the output to. If not provided, the script assumes
+                              ./study_nam to be the output folder.
+        """
+        if not study_folde:                                                    # Set default study folder
+            study_folde = Path.cwd() / study_name
+        output_csv = (study_folde / study_nam).with_suffix('.csv')             # Set output folder
+        if len(parameters_list) == 1:                                          # Sample without doe for one parameter
+            samples = np.linspace(min_values[0], max_values[0], sample_size)   # Sample with uniform vector
+            samples = sorted(list(samples) + normal_values)                    # Add characteristic value to sample
+            df = pd.DataFrame(samples, columns=parameters_list)                # Build pandas data-frame
+        df.insert(0, "MODEL_NO", range(1, df.shape[0] + 1), True)              # Insert Models number column
+        db.dataframe_safe_save(df, output_csv, overwrite_csv)                  # Save csv file in study folder
+        if analysis_folder:                                                    # If analysis folder, copy csv file
+            analysis_folder = Path(analysis_folder, study_nam)                 # Set analysis folder
+            ft.folder_create_if_not(analysis_folder)                           # Create output folder if not present
+            shutil.copy(output_csv, analysis_folder / output_csv.name)         # Copy output to it
+        return output_csv
 
-def abaqus_process_2(list_scripts_folder, script_name, options_input, show_process_option):
-    PATH_TEMP = options_input['PATH_TEMP']
-    import subprocess
-    with open(PATH_TEMP, 'wb') as fileobject:
-        pickle.dump(options_input, fileobject)
-    # ******************** Launch abaqus subprocess *******************
-    clock_start = clock()
-    os.chdir(list_scripts_folder)
-    if show_process_option is True:
-        process = subprocess.Popen('abaqus cae -script ' + script_name,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE,
-                                   shell=True)
-        process.wait()
-        out, err = process.communicate()
-    else:
-        process = subprocess.Popen('abaqus cae noGUI=' + script_name,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE,
-                                   shell=True)
-        process.wait()
-        out, err = process.communicate()
-    print(out)
-    print(err)
-    if process == 0:
-        print ('Process well runned')
-    print('Abaqus time elapsed: ',
-          str(round(clock() - clock_start, 2)), ' s')
-    # *****************************************************************
-    return process
+    def parametric_psf_builder(parameter_values_file, parameters_list, inp_file_name,
+                               analysis_folder=None, **kwargs):
+        """
+        Create *.psf file, for parametric analysis from abaqus command line.
+        Input: parameter_values_file. Csv file containing input variables values.
+               parameters_list. List of parameters for the study.
+               inp_file_name. Name of the inp file which defines the FEA model. Abaqus expects it to
+                              be on the same folder than the psf file when running it.
+               analysis_folder. Path to copy the output file to.
+        Output: Path of psf file.
+        """
+        study_nam = Path(parameter_values_file).stem                                # Extract study name
+        inp_file_name = Path(inp_file_name).name                                    # Set inp file name
+        output_psf_path = Path(parameter_values_file).with_suffix('.psf')           # Set output psf file
+        change_folder_line = ''
+        if analysis_folder:                                                         # If analysis folder, chdir to it
+            ft.folder_create_if_not(Path(analysis_folder, study_nam))               # Create output folder if necessary
+            change_folder_line = 'os.chdir("' + analysis_folder + '/'\
+                                 + study_nam + '/' + '")'
+        header = ['import csv', 'import os',                                        # Header of psf script
+                  'print("EXECUTION FOLDER: " + os.getcwd())',                      # Lines for changing dir
+                  change_folder_line,
+                  'with open("' + study_nam + '.csv") as csvfile:',                 # Lines to extract pars from csv
+                  '    reader = csv.DictReader(csvfile)',
+                  '    lines = [row for row in reader]',
+                  'parameters = ' + str(parameters_list),
+                  'domains = {parameter :'
+                  '[k[parameter] for k in lines] for parameter in parameters}']
+        study_lines = ['study = ParStudy(par=(parameters))',                        # Create study
+                       'for parameter in parameters:',                              # Define parameters
+                       '    study.define(DISCRETE,'
+                       'par=parameter, domain=domains[parameter])',
+                       'for parameter in parameters:',                              # Sample from csv file
+                       '    study.sample(INTERVAL, interval=1, par=parameter)',
+                       'study.combine(TUPLE, name=' + '"model")',                   # Combine samples with tuple method
+                       'study.generate(template="' + inp_file_name + '")']          # Generate jobs
+        with open(output_psf_path, 'w') as file:                                    # Save psf file
+            file.write('\n'.join(header + study_lines))
+            print('*** PSF file created ***')
+        return output_psf_path
 
+    def parametric_modify_inp(inp_file_name, parameters_list,
+                              analysis_folder=None, study_folde=None, **kwargs):
+        """
+        Modify inp file, to include parameters information. Inp file is expected to be found either
+        on the study folder or the analysis_folder.
+        Input: inp_filename. Name of the Inp file to be modified.
+               parameters_list. List of parameters for the study.
+               analysis_folder. Path of folder to copy the output inp file to.
+               study_folde. Path of the folder to read the inp file from.
+        Output: Path of inp file.
+        """
+        inp_variables_names = {'ALPHA_DYN': 'Dynamic,alpha', 'E': 'Elastic'}      # Parameters Keywords in inp file
+        inp_name = Path(inp_file_name).with_suffix('.inp')                        # Normalize inp file suffix
+        study_nam = inp_name.stem                                                 # Extract study name
+        if not study_folde:                                                       # Set default study folder
+            study_folde = Path(Path.cwd() / study_nam)
+        inp_path = Path(study_folde, inp_name)                                    # Search inp in study folder
+        if inp_path.exists():
+            pass
+        else:                                                                     # If inp not in study folder
+            inp_path_analysis = Path(analysis_folder, inp_name)                   # Search inp from analysis folder
+            shutil.copy(inp_path_analysis, inp_path)                              # Copy it to to study folder
+        inp_path = ft.file_save_with_old_version(inp_path)                        # Save old version before modifying
+        with open(inp_path, 'r+') as file:                                        # Load inp file
+            lines = file.readlines()
+        par_lines = [str(par) + '=100\n' for par in parameters_list]              # Initialize parameters
+        assembly_line = [(n, i) for n, i in enumerate(lines)
+                         if '** ASSEMBLY' in i][0][0]
+        lines[assembly_line:assembly_line] = ['* PARAMETER\n'] + par_lines        # Insert initialization lines
+        for par in parameters_list:
+            for n, line in enumerate(lines):
+                key = inp_variables_names[par]
+                if key in line:
+                    after_key = line.partition(key)[-1]
+                    if after_key[0] == '=':
+                        lines[n] = line.replace(after_key.partition(',')[0],
+                                                '=<' + par + '>')
+                    else:
+                        value = lines[n + 1].partition(key)[-1].partition(',')[0]
+                        lines[n + 1] = lines[n + 1].replace(value, '<' + parameter + '>')
+        out_inp_file = inp_path                                                   # Set output inp path
+        with open(out_inp_file, 'w+') as file:                                    # Save inp file
+            file.write(''.join(lines))
+        if analysis_folder:                                                       # Copy output file to analysis folder
+            copy_path = Path(analysis_folder, study_nam, out_inp_file.name)
+            shutil.copy(out_inp_file, copy_path)
+        print('*** INP file modified ***')
+        return out_inp_file
 
-def abaqus_process3(i_script, show_process_option, args = []):
-    """ Runs an script in an Abaqus cae instance.
-        list_scripts_folder = Path.
-        script_name = str. Script name to be run.
-        options_input = dict. Paths and Files names to be passed to the script
-        show_process_option = Boolean. If True, shows the CAE window. """
-    import subprocess, os
-    os.chdir(SCPRITS_FOLDER)
-    # ******************** Launch abaqus subprocess *******************
-    clock_start = clock()
-    args = ' '.join(args)
-    if show_process_option is True:
-        proc_state = subprocess.call('abaqus cae -script ' + i_script + ' -- ' + args,
-                                     shell=True)
-        print('abaqus cae -script ' + i_script + ' ' + args)
-    else:
-        proc_state = subprocess.call('abaqus cae noGUI=' + i_script + ' -- ' + args,
-                                     shell=True)
-    if proc_state == 0:
-        print ('Process well runned')
-    print('Abaqus time elapsed: ',
-          str(round(clock() - clock_start, 2)), ' s')
-    # *****************************************************************
-    return proc_state
+    def modify_psf_4_run(psf_fil, analysis_folder=None, cpu_numbers=8, **kwargs):
+        """
+        Modifies psf file, leaving only the lines necessary to run the parametric jobs,
+        and adds a line to execute them.
+        Inputs: psu_file. Psu file to be modified.
+                analysis_folder. Path to copy the output to.
+                cpu_numbers. Int of amount of cpu to be used in the analysis.
+        Output: Path of the modified psf file.
+        """
+        study_nam = Path(psf_fil).stem                                                # Extract study name
+        output_psf = psf_fil                                                          # Set default output psf path
+        if analysis_folder:                                                           # Set analysis folder output psf
+            output_psf = Path(analysis_folder,
+                              study_nam, study_nam).with_suffix('.psf')
+        with open(psf_fil) as input_psf:                                              # Read input psf
+            lines = input_psf.readlines()
+        line_0 = []                                                                   # Extract lines of interest
+        if analysis_folder:                                                           # Line to chdir to analysis folder
+            line_0 = [[i for i in lines if 'os.chdir' in i][0]]
+        parameters_line = [[i for i in lines if 'parameters = ' in i][0]]             # Line with parameters list
+        study_line = [[i for i in lines if 'study = ' in i][0]]                       # Line with study details
+        execution_line = ['study.execute(ALL, execOptions = ' +                       # Execution line
+                          '"cpus=' + str(cpu_numbers) + '")']
+        with open(output_psf, 'w+') as output_file:                                   # Write output file
+            output_file.write(''.join(line_0 + parameters_line
+                                      + study_line + execution_line))
+        return output_psf
+
+    input_data = ft.config_file_extract_input(config_file)                                 # Extract input data
+    study_name = config_file.stem
+    study_folder = ft.folder_create_if_not(Path.cwd() / study_name)                        # Set project sub-folder
+    input_data['study_name'], input_data['study_folder'] = study_name, study_folder        # Set study name and folder
+    max_cpu_no = multiprocessing.cpu_count()                                               # Check maximum cpu numbers
+    if 'cpu_numbers' not in input_data or int(input_data['cpu_numbers']) > max_cpu_no:
+        input_data['cpu_numbers'] = max_cpu_no
+    if 'inp_file_name' not in input_data:                                                  # Set default input file path
+        input_data['inp_file_name'] = study_name
+    if 'analysis_folder' not in input_data:                                                # Set default analysis folder
+        input_data['analysis_folder'] = study_folder
+    csv_file = parametric_csv_builder(study_nam=input_data['study_name'],                  # Create csv input file
+                                      **input_data)
+    psf_file = parametric_psf_builder(parameter_values_file=csv_file,                      # Create psf script
+                                      **input_data)
+    parametric_modify_inp(**input_data)                                                    # Modify inp file
+    run_psf(psf_file, **input_data)                                                        # Run psf and get inp files
+    return modify_psf_4_run(psf_file, **input_data)                                        # Modify psf file for FEA
 
 
 def parametric_check_odb_files(root_path):
@@ -120,141 +221,161 @@ def parametric_check_odb_files(root_path):
     return status_out
 
 
-def parametric_analysis(config_file):
+def parametric_extract_fea_data(config_file):
     """
-    Generate files necessary for parametric analysis within abaqus.
-    Input: config_file. Path of config file for the study.
+    Gathers output data from Abaqus odb files, calling a post-process script within an
+    Abaqus subprocess in batch.
+    Input: config_file. Project config file with options and paths specified in inner functions.
+    Output: List of output variable references.
     """
-    # Config input file
-    config_file_path = config_file
-    cfg = configparser.ConfigParser()
-    cfg.read(config_file_path)
+    def parametric_gather_script_modify(extraction_algorithm, database_folder=None,
+                                        one_odb_only=False, **kwargs):
+        """
+        Modifiy post-process Abaqus script, to allow for batch processing and gathering of output from
+        subprocess to main process. Any file generated by Abaqus, is to be stored in a 'temp_files'
+        subfolder in the extraction algorithm folder.
+        Inputs: extraction_algoritm. Path of post-process python script.
+                database_folder. Path of folder with odb files.
+                one_odb_only. Boolean, if True, run post-process script only for one odb in the folder.
+                              Use it for debugging.
+        Output: Path of temp modified script.
+        """
+        study_folde = extraction_algorithm.parent                           # Set study sub-folder
+        with open(extraction_algorithm, 'r+') as script:                    # Read extraction script
+            algo_lines = script.readlines()
+        time_history, th = False, []                                        # Initialize time history variables as False
+        closer = []                                                         # Initialize batch closer as empty
+        for line in algo_lines:                                             # Find out if time history data is present
+            if 'XYDataFromHistory' in line:
+                time_history = True
+                break
+        header = ['import os', 'import sys',                                # Lines of header
+                  'import csv', 'import numpy as np',
+                  'from abaqus_inside import *']
+        if database_folder:                                                 # Lines of odb files batch
+            odb_list = ft.files_with_extension_lister(database_folder,
+                                                      '.odb')
+            odb_list = [str(t) for t in odb_list]
+            if one_odb_only:                                                # Pass only one odb is option if True
+                odb_list = odb_list[0:1]
+            odb_header = ['odb_list=' + repr(odb_list),                     # Lines for loading odb paths
+                          'for odb_path in odb_list:',
+                          '    odb = session.openOdb(odb_path)']
+            closer = ['    odb.close()']
+            algo_lines = odb_header + ['    ' + x for x in algo_lines]      # Indent body of script for batch
+        if time_history:                                                    # Lines for time history data extraction
+            parent_dir, npz_name = '', 'odb_name.replace(".odb",".npz")'    # Set names of npz files
+            th = ['data = {k: v for k, v in session.xyDataObjects.items()}',
+                  'odb_name = odbs_retrieve_name(0)',
+                  'npz_name = ' +
+                  repr(str(study_folde / 'temp_files') + '/') +
+                  ' + ' + npz_name + ".split('/')[-1]",
+                  'np.savez(npz_name, **data)',                             # Line for saving npz files
+                  'log_abaqus("npz saved:")',                               # Line for logging variables references
+                  'log_abaqus(npz_name)']
+            if database_folder:
+                th = ['    ' + x for x in th]                               # Indent time history lines for batch
+        lines_to_exec = '\n'.join(header + algo_lines + th + closer)        # Assembly modified script lines
+        temp_folder = ft.folder_create_if_not(study_folder / 'temp_files')  # Create temp folder if does not exist
+        modified_script_path = Path(temp_folder,                            # Set temp script path
+                                    'temp_script').with_suffix('.py')
+        with open(modified_script_path, 'w+') as out_file:                  # Save temp script
+            out_file.write(lines_to_exec)
+        print('*** GATHER SCRIPT MODIFIED ***')
+        return modified_script_path
 
-    # Extract input data and process it
-    section = 'PARAMETRIC_ANALYSIS'
-    parameter_values_file = cfg.get(section, 'PARAMETER_VALUES_FILE')
-    parameters_list = eval(cfg.get(section, 'PARAMETERS'))
-    template_file = cfg.get(section, 'TEMPLATE_FILE').replace('.inp', '')
-    execute_jobs = cfg.get(section, 'EXECUTE_JOBS')
-    try:
-        import multiprocessing
-        max_cpu_numbers = multiprocessing.cpu_count()
-        cpu_numbers = cfg.get(section, 'CPU_NUMBERS')
-        if cpu_numbers > max_cpu_numbers:
-            cpu_numbers = max_cpu_numbers
-    except configparser.NoOptionError:
-        cpu_numbers = max_cpu_numbers
-    try:
-        inp_folder = cfg.get(section, 'INP_FOLDER')
-        input_folder = cfg.get(section, 'INPUT_FOLDER')
-        output_folder = cfg.get(section, 'OUTPUT_FOLDER')
-    except KeyError:
-        inp_folder, input_folder, output_folder = None, None, None
-
-    psf_file = parametric_psf(parameter_values_file, parameters_list, template_file, input_folder=input_folder,
-                              output_folder=output_folder, cpu_numbers=cpu_numbers, execute_jobs=execute_jobs)
-    inp_file = parametric_modify_inp(template_file + '.inp', parameters_list,
-                                     inp_folder=inp_folder, output_folder=output_folder)
-
-    run_psf(psf_file)
+    input_cfg = ft.config_file_extract_input(config_file)                               # Read input config
+    study_name = config_file.stem                                                       # Get project name
+    study_folder = Path(Path.cwd() / study_name)                                        # Set study subfolder
+    input_cfg['study_folde'] = study_folder                                             # Build kwags cfg dict
+    if not input_cfg['extraction_algorithm']:                                           # Set default cfg values
+        input_cfg['extraction_algorithm'] = Path(study_folder,
+                                                 study_name).with_suffix('.py')
+    if not input_cfg['database_folder']:
+        input_cfg['database_folder'] = Path(input_cfg['database_folder'], study_name)
+    default_false_vars = ['gui', 'verbose', 'one_odb_only']
+    for i in default_false_vars:
+        if i not in input_cfg.keys():
+            input_cfg[i] = False
+    modified_script = parametric_gather_script_modify(**input_cfg)                      # Modify gather script to batch
+    output_vars = run_abaqus_subprocess(script=modified_script, **input_cfg)            # Run it
+    return output_vars
 
 
-def parametric_psf(parameter_values_file, parameters_list, template_file, input_folder=None, output_folder=None,
-                   cpu_numbers=4, execute_jobs=0):
+def parametric_summarize_output(config_file):
     """
-    Create *.psf file, for parametric analysis from abaqus command line.
-    Input: parameter_values_file. Csv file containing input variables values.
-           parameters_list. List of parameters for the study.
-           template_file. Inp file which defines the FEA model.
-           output_folder. Path of output files. If not provided, look for inp file in current folder.
-           cpu_numbers. Number of CPUs for job paralellization.
-           execute_jobs. If 1, execute created jobs.
-    Output: Path of psf file.
+    Loads output npz files generated by Abaqus and save them in a unique hdf5 file,
+    corresponding to the project in course.
+    Input: config_file. Cfg file containing details of Abaqus study.
+    Output: Path of hdf5 file.
     """
-    parameter_file_path = parameter_values_file
-    if input_folder:
-        parameter_file_path = input_folder + parameter_values_file
-    output_psf_file = parameter_values_file.replace('.csv', '') + '.psf'
-    if output_folder:
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
-        output_psf_file = output_folder + output_psf_file
-    header = ['import csv',
-              'with open("' + parameter_file_path + '") as csvfile:',
-              '    reader = csv.DictReader(csvfile)',
-              '    lines = [row for row in reader]',
-              'parameters = ' + str(parameters_list),
-              'domains = {parameter : [k[parameter] for k in lines] for parameter in parameters}']
-    with open(output_psf_file, 'w') as file:
-        # Header
-        for line in header:
-            file.write(line)
-            file.write('\n')
-        if output_folder:
-            file.write('import os\n')
-            file.write('os.chdir("' + output_folder + '")\n')
-        # Create study
-        file.write('study = ParStudy(par=(parameters))\n')
-        # Define the parameters
-        file.write('for parameter in parameters:\n')
-        file.write('    study.define(DISCRETE, par=parameter, domain=domains[parameter])\n')
-        # Sampling
-        file.write('for parameter in parameters:\n')
-        file.write('    study.sample(INTERVAL, interval=1, par=parameter)\n')
-        # Combine the samples
-        file.write('study.combine(TUPLE, name=' + "'model')\n")
-        # Generate jobs
-        file.write('study.generate(template="' + template_file + '")\n')
-        # Execute jobs
-        if int(execute_jobs):
-            file.write('study.execute(ALL, execOptions = ' + "'cpus=" + str(cpu_numbers) + "')\n")
-        print('*** PSF file created ***')
-    return output_psf_file
+    study_name = Path(config_file).stem                                            # Get study name
+    temp_folder = Path(Path.cwd() / study_name / 'temp_files')                     # Set input files folder
+    csv_file = Path(config_file).with_suffix('.csv')                               # Set csv input file
+    hdf_path = Path(config_file).with_suffix('.hdf5')                              # Set output hdf5 file
+    df = pd.read_csv(csv_file)                                                     # Extract parametric data from csv
+    df.set_index('MODEL_NO', inplace=True)                                         # Set model names as data-frame index
+    df_dict = df.to_dict(orient='index')                                           # Convert data-frame to dict
+    npz_files_paths = ft.files_with_extension_lister(temp_folder, '.npz')          # List npz files
+    npz_files_nos = [st.str_extract_last_int(i.stem) for i in npz_files_paths]     # Try to get models numbers
+    npz_attributes = [df_dict[i].items() for i in npz_files_nos]                   # Extract attributes from data-frame
+    input_config = ft.config_file_extract_input(config_file)                       # Input config for printing or not
+    db.npz_to_hdf5(npz_files_list=npz_files_paths, hdf5_path=hdf_path,             # Save npz to hdf5 file
+                   attributes_dict=npz_attributes,
+                   print_structure=input_config['print_hdf5'])
+    print('*** HDF5 file created ***')
+    return hdf_path
 
 
-def parametric_modify_inp(inp_file, parameters_list, inp_folder=None, output_folder=None):
+def run_abaqus_subprocess(script, gui=False, database_folder=None, verbose=False, **kwargs):
     """
-    Modify inp file, to include parameters information.
-    Input: inp_file. Inp file to be modified.
-           parameters_list. List of parameters for the study.
-           inp_folder. Path of inp folder location. If not provided, look for inp file in current folder.
-           output_folder. Path of output files. If not provided, look for inp file in current folder.
-    Output: Path of inp file.
+    Run script in a Abaqus cae subprocess and gather the data printed inside Abaqus python environment.
+    Inputs: script. PAth of script to be runned.
+            gui. Boolean, if True, open GUI version of CAE.
+            database_folder. Path of folder to change dir to.
+            verbose. Boolean, if True, print output variable references.
+    Output: List of output variable references generated by script.
     """
-    inp_variables_names = {'ALPHA_DYN': 'Dynamic,alpha', 'E': 'Elastic'}
-    if inp_folder:
-        inp_file = inp_folder + inp_file
-    with open(inp_file, 'r+') as file:
-        lines = file.readlines()
-    # Initialize parameters
-    assembly_line = [(n, i) for n, i in enumerate(lines) if '** ASSEMBLY' in i]
-    assembly_line_n = assembly_line[0][0]
-    parameters_head_line = ['* PARAMETER\n']
-    parameters_lines = [str(parameter) + '=100\n' for parameter in parameters_list]
-    lines = lines[0:assembly_line_n] + parameters_head_line + parameters_lines + lines[assembly_line_n:]
-    for parameter in parameters_list:
-        for n, line in enumerate(lines):
-            if inp_variables_names[parameter] in line:
-                try:
-                    a = line.split(inp_variables_names[parameter])[-1].split(',')[1]
-                    value = line.split(inp_variables_names[parameter])[-1].split(',')[0]
-                    lines[n] = line.replace(value, '=<' + parameter + '>')
-                except IndexError:
-                    value = lines[n+1].split(inp_variables_names[parameter])[-1].split(',')[0]
-                    lines[n+1] = lines[n+1].replace(value, '<' + parameter + '>')
-    if output_folder:
-        inp_file = output_folder + inp_file.replace(inp_folder, '')
-    with open(inp_file, 'w+') as file:
-        for line in lines:
-            file.write(line)
-    print('*** INP file modified ***')
-    return inp_file
+    print('*** RUNNING ' + script.name + ' ***')
+    script = str(script)                                                           # Normalize script path to str
+    if gui:                                                                        # Select Abaqus start command for cmd
+        command = 'abaqus cae script='
+    else:
+        command = 'abaqus cae noGUI='
+    process = command + script                                                     # Set command line for cmd
+    if database_folder:                                                            # Modify it if database folder
+        process = r'SET original_folder=%cd% & cd ' + database_folder +\
+                  ' & ECHO %cd% & cd & ' + command + script + ' -- %cd%'           # Include chdir actions
+    p = subprocess.Popen(process, shell=True, stdout=subprocess.PIPE)              # Launch subprocess
+    out, err = p.communicate()                                                     # Wait completion
+    print('*** DONE EXECUTING ABAQUS SUBPROCESS ***')                              # Report completion
+    print('ERROR:', err)                                                           # Report errors
+    out_var_references = [i.decode("utf-8") for i in out.split(b'\r\n')]           # Get Abaqus messages
+    if verbose:                                                                    # If verbose, print them
+        pprint.pprint(out_var_references)
+    paths_to_strip = [Path.cwd()]                                                  # Filter output variable references
+    if database_folder:
+        paths_to_strip.append(Path(database_folder))
+    out_var_references = [i for i in out_var_references if                         # Strip sys argv and empty spaces
+                          Path(i) not in paths_to_strip and ' ' not in i]
+    return out_var_references
 
 
-def run_psf(psf_file):
+def run_psf(input_var, **kwargs):
     """
-    Runs parametric analysis in a separate cmd window.
-    Input: psf_file. Path of psf file.
+    Runs parametric analysis in a separate cmd subprocess.
+    Input: input_var. If it is a psf file, run it with subprocess. If it is a cfg file,
+    first figure out path of psf file and then run it.
     """
-    os.system('abaqus script=' + psf_file)
+    if Path(input_var).suffix == '.psf':                                    # If input is a psf file, pass it to cmd
+        psf_file = str(input_var)
+    if Path(input_var).suffix == '.cfg':                                    # If it is a cfg
+        config_data = ft.config_file_extract_input(input_var)               # Read cfg data and get analysis folder path
+        psf_file = str(Path(config_data['analysis_folder'],
+                            input_var.stem, input_var.stem).with_suffix('.psf'))
+    print('RUNING', psf_file)
+    p = subprocess.Popen('abaqus script=' + psf_file, shell=True)           # Run psf file in no gui environment
+    p.communicate()                                                         # Wait for the process to finish
+
+
 
