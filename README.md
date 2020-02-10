@@ -2,14 +2,13 @@
 Python scripts to automate the boring stuff in everyday use of Simulia Abaqus
 
 # Launching Abaqus CAE
-The open_abaqus9.bat launches Abaqus CAE and calls for open_abaqus.py script. You can create a link for the bat file and put it on the desktop for easier acces.
+The open_abaqus.bat launches Abaqus CAE and calls for open_abaqus.py script. You can create a link for the bat file and put it on the desktop for easier acces.
 The open python script does several things:
 
 - Modifies visuatization options.
 - Changes work directory to the one specified in the config_abaqus.cfg file
 - Imports abaqus_inside module, which containts functions to be used within Abaqus itself.
-- Optionally: opens a default file at start, imports "develop.py" file and assigns it to a function named dev, so you can easily modify snippets and run them
-by calling "dev()" in Abaqus CAE command area.
+- Optionally: opens a default file at start, imports "develop.py" file and assigns it to a function named dev, so you can easily modify snippets and run them by calling "dev()" in Abaqus CAE command area.
 
 
 # Macros
