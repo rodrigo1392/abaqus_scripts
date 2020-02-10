@@ -9,23 +9,16 @@
     Developed by Rodrigo Rivero.
     https://github.com/rodrigo1392"""
 from __future__ import print_function
-# -*- coding: mbcs -*-
-# Do not delete the following import lines
 from abaqus import *
 from abaqusConstants import *
 import __main__
 import ConfigParser as configparser
 
 
-# Config input file
 config_file_path = __file__.replace('.py', '.cfg').replace('.pyc', '.cfg').replace('.cfgc', '.cfg')
-cfg = configparser.ConfigParser()
-cfg.read(config_file_path)
-
-
-# Extract input data and process it
-CPUS_NUMBER = eval(cfg.get('MACROS', 'CPUS_NUMBER'))
-print('CPUS_NUMBER:', CPUS_NUMBER)
+cfg = configparser.ConfigParser()                                                # Start configfile engine
+cfg.read(config_file_path)                                                       # Read input file
+CPUS_NUMBER = eval(cfg.get('MACROS', 'CPUS_NUMBER'))                             # Extract input data and process it
 
 
 def jobs_create_4all_models():
@@ -35,10 +28,8 @@ def jobs_create_4all_models():
     """
     global CPUS_NUMBER
     for model_key, model in mdb.models.items():
-        # Replace all blank spaces for underscores
-        model_name = model_key.replace(' ', '_')
-        # Create the Job using each Model name
-        if model_name not in mdb.jobs.keys():
+        model_name = model_key.replace(' ', '_')                                 # Replace blank spaces for underscores
+        if model_name not in mdb.jobs.keys():                                    # Create the Job using each Model name
             jobs_create_4all_models_with_overwrite()
     return
 
@@ -50,27 +41,25 @@ def jobs_create_4all_models_with_overwrite():
     """
     global CPUS_NUMBER
     for model_key, model in mdb.models.items():
-        # Replace all blank spaces for underscores
-        model_name = model_key.replace(' ', '_')
-        # Create the Job using each Model name
-        mdb.Job(name=str(model_name), model=model, description='',
-            type=ANALYSIS, atTime=None, waitMinutes=0, waitHours=0,
-            queue=None, memory=90, memoryUnits=PERCENTAGE,
-            getMemoryFromAnalysis=True, explicitPrecision=SINGLE,
-            nodalOutputPrecision=SINGLE, echoPrint=OFF, modelPrint=OFF,
-            contactPrint=OFF, historyPrint=OFF, userSubroutine='',
-            scratch='', resultsFormat=ODB, multiprocessingMode=DEFAULT,
-            numCpus=CPUS_NUMBER, numDomains=CPUS_NUMBER)
+        model_name = model_key.replace(' ', '_')                                 # Replace blank spaces for underscores
+        mdb.Job(name=str(model_name), model=model, description='',               # Create the Job using each Model name
+                type=ANALYSIS, atTime=None, waitMinutes=0, waitHours=0,
+                queue=None, memory=90, memoryUnits=PERCENTAGE,
+                getMemoryFromAnalysis=True, explicitPrecision=SINGLE,
+                nodalOutputPrecision=SINGLE, echoPrint=OFF, modelPrint=OFF,
+                contactPrint=OFF, historyPrint=OFF, userSubroutine='',
+                scratch='', resultsFormat=ODB, multiprocessingMode=DEFAULT,
+                numCpus=CPUS_NUMBER, numDomains=CPUS_NUMBER)
     return
 
 
 def jobs_run_all():
     """ Runs all the Jobs contained in the Database, one at a time. """
     jobs_count = 1
-    for job_key, job in mdb.jobs.items():
-        job.submit(consistencyChecking=OFF)
-        print('Job number ', str(jobs_count), ' of: ', str(len(mdb.jobs)))
-        job.waitForCompletion()
+    for job_key, job in mdb.jobs.items():                                        # Iterate trough Model Jobs
+        job.submit(consistencyChecking=OFF)                                      # Run job
+        print('Job number ', str(jobs_count), ' of: ', str(len(mdb.jobs)))       # Report job number and remaining
+        job.waitForCompletion()                                                  # Wait for completion
         jobs_count += 1
     return
 
@@ -79,11 +68,11 @@ def jobs_run_not_completed():
     """ Runs all Jobs contained in the Database which status in not
         COMPLETED, one at a time. """
     jobs_count = 1
-    for job_key, job in mdb.jobs.items():
-        if job.status != COMPLETED:
-            job.submit(consistencyChecking=OFF)
-            print('Job number ', str(jobs_count))
-            job.waitForCompletion()
+    for job_key, job in mdb.jobs.items():                                        # Iterate trough Model Jobs
+        if job.status != COMPLETED:                                              # Verify job status
+            job.submit(consistencyChecking=OFF)                                  # If not Completed, run it
+            print('Job number ', str(jobs_count))                                # Report job number and remaining
+            job.waitForCompletion()                                              # Wait for completion
             jobs_count += 1
     return
 

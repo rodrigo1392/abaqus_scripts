@@ -2,7 +2,6 @@
     Developed by Rodrigo Rivero.
     https://github.com/rodrigo1392"""
 
-#from __future__ import print_function
 from abaqus import *
 from abaqusConstants import *
 from driverUtils import *
@@ -33,11 +32,10 @@ def mesh_extract_set_nodes(odb, set_name):
             set_name. String with name of set which points labels are to be extracted.
     Output: Dict with nodes labels and coordinates.
     """
-    import abaqus_inside
     print('Extracting nodes...')
-    odb = abaqus_inside.odbs_normalize_object(odb)
-    node_set = odb.rootAssembly.nodeSets[set_name]
-    instances_names_list = [i for i in node_set.instanceNames]
+    odb = odbs_normalize_object(odb)                                             # Normalize input to odb object
+    node_set = odb.rootAssembly.nodeSets[set_name]                               # Get nodes set
+    instances_names_list = [i for i in node_set.instanceNames]                   # Get instance names
     """
     output = {set_name:
               {instance_name:
@@ -45,7 +43,7 @@ def mesh_extract_set_nodes(odb, set_name):
                                        node in node_set.nodes[num])
                for num, instance_name in enumerate(instances_names_list)}}
     """
-    output = {(set_name, instance_name):
+    output = {(set_name, instance_name):                                         # Build output dict
               [(node.label, node.coordinates) for node in node_set.nodes[num]]
               for num, instance_name in enumerate(instances_names_list)}
     return output
@@ -66,23 +64,22 @@ def models_mesh_stats(model_name, total_stats=False):
     Input: model_name. String of model name.
            total_stats. Option to print whole model stats.
     """
-    element_types = ['numLineElems',  # 'numMeshedRegions',
-                     'numNodes', 'numPointElems', 'numPyramidElems', 'numQuadElems',
-                     'numTetBoundaryElems', 'numTetElems', 'numTriElems', 'numWedgeElems']
+    element_types = ['numLineElems',  'numMeshedRegions', 'numNodes',            # Abaqus meshstats keywords
+                     'numPointElems', 'numPyramidElems', 'numQuadElems',
+                     'numTetBoundaryElems', 'numTetElems', 'numTriElems',
+                     'numWedgeElems']
     print('*****', '\nModel:', model_name, '\n')
     model = mdb.models[model_name]
-    for inst_key, instance in model.rootAssembly.instances.items():
-        stats = model.rootAssembly.getMeshStats((instance,))
+    for inst_key, instance in model.rootAssembly.instances.items():              # Iterate trough model instances
         print('\nInstance:', inst_key)
         try:
-            for element_type in element_types:
+            for element_type in element_types:                                   # Print mesh stats by element type
                 number_of_elements = eval('stats.' + element_type)
                 if number_of_elements:
                     print(element_type, ':', number_of_elements)
         except AttributeError:
             pass
-    if total_stats:
-        tot_stats = model.rootAssembly.getMeshStats((tuple(model.rootAssembly.instances.values())))
+    if total_stats:                                                              # Optionally, print total stats
         print('\n--- TOTAL ---')
         try:
             for element_type in element_types:
@@ -99,8 +96,9 @@ def models_modify_set_name(set_name, new_set_name):
     Inputs: set_name = string. Name of the set to be renamed.
             new_set_name = string. New name for the set.
     """
-    for model_key, model in mdb.models.items():
-        model.rootAssembly.sets.changeKey(fromName=set_name, toName=new_set_name)
+    for model_key, model in mdb.models.items():                                  # Iterate trough models
+        model.rootAssembly.sets.changeKey(fromName=set_name,                     # Change set names
+                                          toName=new_set_name)
     return
 
 
@@ -112,11 +110,10 @@ def odbs_calc_time(odb, show=True):
     Output: Dict object, with systemTime, userTime and wallclockTime as keys
             and corresponding values in seconds as values.
     """
-    odbs_normalize_object(odb)
-    # Convert to dict
-    calc_time = odb.diagnosticData.jobTime
-    output = ast.literal_eval(str(calc_time)[1:-1])
-    if show:
+    odbs_normalize_object(odb)                                                   # Normalize input to odb object
+    calc_time = odb.diagnosticData.jobTime                                       # Get calculation time
+    output = ast.literal_eval(str(calc_time)[1:-1])                              # Convert time to dict
+    if show:                                                                     # Print calculation time
         odb_name = (os.path.splitext(os.path.basename(odb.name))[0])
         print(odb_name, ': ', str(calc_time))
     return output
@@ -132,12 +129,12 @@ def odbs_calc_time_from_folder(odbs_folder, show=True, recursive=False, close_od
     Output: Dict of Odb names : Dict of times pairs.
     """
     output = {}
-    odb_list = files_with_extension_lister(odbs_folder, '.odb', full_name_option=True, sub_folders_option=recursive)
-    print(len(odb_list), 'Odb objects found')
-    for job_key in odb_list:
-        odb = odbs_normalize_object(job_key)
-        output[job_key] = odbs_calc_time(odb, show)
-    if close_odbs:
+    odb_list = files_with_extension_lister(odbs_folder, '.odb', 1, recursive)    # List odb paths
+    print(len(odb_list), 'Odb objects found')                                    # Report amount of odb files
+    for job_key in odb_list:                                                     # Iterate through odb files:
+        odb = odbs_normalize_object(job_key)                                     # open odb
+        output[job_key] = odbs_calc_time(odb, show)                              # extract odb calculation time
+    if close_odbs:                                                               # Optionally, close all opened odbs
         from abaqusMacros import odbs_close_all_odbs
         odbs_close_all_odbs()
     return output
@@ -153,12 +150,11 @@ def odbs_normalize_object(odb_ish):
     Output: Odb object.
     """
     if isinstance(odb_ish, str):
-        try:
+        try:                                                                     # Verify is odb is already opened
             odb = session.odbs[odb_ish]
-        except KeyError:
-            # Open odb
+        except KeyError:                                                         # Open it if it is not opened yet
             odb = session.openOdb(odb_ish, readOnly=False)
-    else:
+    else:                                                                        # Otherwise, just return its reference
         odb = odb_ish
     return odb
 
@@ -170,10 +166,10 @@ def odbs_retrieve_name(number, show_all=False):
     Input: number. Int of position of the Odb in the list.
     Output: String of the corresponding Odb name.
     """
-    keys = session.odbs.keys()
-    keys = sorted(keys)
-    selected_key = keys[number]
-    if show_all:
+    keys = session.odbs.keys()                                                   # Get opened odbs keys list
+    keys = sorted(keys)                                                          # Sort that list
+    selected_key = keys[number]                                                  # Select one from its position
+    if show_all:                                                                 # Print list of opened odbs
         print('Currently opened Odbs', keys)
     return selected_key
 
@@ -186,11 +182,11 @@ def odbs_retrieve_set_name(odb, number, show_all=False):
            number. Int of position of the set in the list.
     Output: String of the corresponding set name.
     """
-    odb = odbs_normalize_object(odb)
-    keys = odb.rootAssembly.nodeSets.keys()
-    keys = sorted(keys)
-    selected_key = keys[number]
-    if show_all:
+    odb = odbs_normalize_object(odb)                                             # Normalize input to odb object
+    keys = odb.rootAssembly.nodeSets.keys()                                      # Get node sets keys
+    keys = sorted(keys)                                                          # Sort them
+    selected_key = keys[number]                                                  # Select one by position
+    if show_all:                                                                 # Print list of available node sets
         print('Available node sets', keys)
     return selected_key
 
@@ -203,18 +199,19 @@ def odbs_upgrade_from_folder(odbs_folder, recursive=False, print_every=1):
             print_every. Int that defines intervals for printing info.
     """
     import odbAccess
-    odb_list = files_with_extension_lister(odbs_folder, '.odb', full_name_option=True, sub_folders_option=recursive)
-    upgradable_odb_list = [i for i in odb_list if odbAccess.isUpgradeRequiredForOdb(i)]
-    print(len(odb_list), 'Odb objects found', len(upgradable_odb_list), 'require upgrade')
-    temp_name = os.path.join(odbs_folder, 'temp_odb_name.odb')
+    odb_list = files_with_extension_lister(odbs_folder, '.odb', 1, recursive)    # List odb paths
+    upgradable_odb_list = [i for i in                                            # Filter only old versioned odbs
+                           odb_list if odbAccess.isUpgradeRequiredForOdb(i)]
+    print(len(odb_list), 'Odb objects found', len(upgradable_odb_list),          # Report amount of odbs to upgrade
+          'require upgrade')
+    temp_name = os.path.join(odbs_folder, 'temp_odb_name.odb')                   # Set temporary names
     for job_number, job_key in enumerate(upgradable_odb_list):
-        # Option to print less
-        if divmod(job_number, print_every)[1]==0:
-             print('Processing', job_key, job_number + 1, 'of', len(upgradable_odb_list))
-        new_name = job_key
+        if divmod(job_number, print_every)[1] == 0:                              # Optionally, report less times
+            print('Processing', job_key,
+                  job_number + 1, 'of', len(upgradable_odb_list))
+        new_name = job_key                                                       # Rename new and old odb files
         old_name = job_key.replace('.odb', '-old.odb')
         session.upgradeOdb(job_key, temp_name)
-        # Rename old and new Odb files
         os.rename(job_key, old_name)
         os.rename(temp_name, new_name)
     print('DONE')
@@ -228,13 +225,15 @@ def parts_2d_assign_properties(model_name, section_name, first_letters=None):
            section_name. String of section name to be assigned.
            first_letters. If entered, look for parts that start with them.
     """
-    parts_list = [i for i in mdb.models[model_name].parts.values()]
+    parts_list = [i for i in mdb.models[model_name].parts.values()]              # Get list of parts names from model
     if first_letters:
-        parts_list = [i for i in parts_list if i.name.startswith(first_letters)]
-    for part in parts_list:
+        parts_list = [i for i in parts_list if                                   # Optionally, filter with first letters
+                      i.name.startswith(first_letters)]
+    for part in parts_list:                                                      # Iterate trough parts list and assign
         faces = part.faces.getSequenceFromMask(mask=('[#1 ]',), )
         region = part.Set(faces=faces, name='BODY')
-        part.SectionAssignment(region=region, sectionName=section_name, offset=0.0, offsetType=MIDDLE_SURFACE,
+        part.SectionAssignment(region=region, sectionName=section_name,
+                               offset=0.0, offsetType=MIDDLE_SURFACE,
                                offsetField='', thicknessAssignment=FROM_SECTION)
 
 
@@ -244,10 +243,10 @@ def parts_clean_properties(model_name, first_letter=None):
     Input: model_name. String of model name.
            first_letters. If entered, look for parts that start with them.
     """
-    parts_list = [i for i in mdb.models[model_name].parts.values()]
-    if first_letter:
+    parts_list = [i for i in mdb.models[model_name].parts.values()]              # Get list of parts names from model
+    if first_letter:                                                             # Optionally, filter with first letters
         parts_list = [i for i in parts_list if i.name.startswith(first_letter)]
-    for part in parts_list:
+    for part in parts_list:                                                      # Iterate trough parts list and clean
         assignments_number = len(part.sectionAssignments)
         for i in range(0, assignments_number):
             del part.sectionAssignments[0]
@@ -260,8 +259,9 @@ def parts_export_iges(model_name, path, first_letters=None):
            path. Path to export parts to.
            first_letters. If entered, look for parts that start with them.
     """
-    parts_list = [i for i in mdb.models[model_name].parts.values()]
-    if first_letters:
+    parts_list = [i for i in mdb.models[model_name].parts.values()]              # Get list of parts names from model
+    if first_letters:                                                            # Optionally, filter with first letters
         parts_list = [i for i in parts_list if i.name.startswith(first_letters)]
-    for part in parts_list:
-        part.writeIgesFile(fileName=path + r"\\" + part.name + '.igs', flavor=STANDARD)
+    for part in parts_list:                                                      # Iterate trough parts list and export
+        part.writeIgesFile(fileName=path + r"\\" + part.name + '.igs',
+                           flavor=STANDARD)
