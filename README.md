@@ -19,6 +19,21 @@ You should place both abaqusMacros.py and abaqusMacros.cfg files in the "site" d
 
 The .cfg file contains inputs parameters to some of the macros scripts, present in abaqusMacros.py. You can config them on the fly, by saving changes on cfg file and then hitting the Reload button in the File->Macro manager dialog box on the GUI.
 
-Looking forward to keep including new actions.
 
-All sugestions are welcome.
+# Parametric analysis
+
+In this framework, parametric analysis is thought as a 6 steps process, which are intented to be as automatized as posible. They are:
+
+1. Creation of input psf and inp files required by Abaqus CAE, and an auxiliar csv file with parameters samples values. It requires a cfg config file with mathematical details of the parametric project and a template inp of the FEA model.
+
+2. Run simulations from an auxiliar command line.
+
+3. Extract output data and save it as npz numpy arrays, one for each odb file in the project. An script to read and generate time history and field data is required. It can be created manually, studying the rpy file generated automatically by Abaqus when performing actions in the GUI software.
+
+4. Summarize output data calling all npz files, ordinate them and save the database in a hdf5 file.
+
+5. Read hdf5 file and export data, create plots, etc.
+
+Parametric functions, present in abaqus_outside script, are designed to be used during each of these steps. An example of input cfg and inp files are provided in examples folder.
+
+# Looking forward to keep including new actions. All sugestions are welcome.
