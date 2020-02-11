@@ -1,0 +1,16 @@
+import csv
+import os
+print("EXECUTION FOLDER: " + os.getcwd())
+os.chdir("C:/abaqus_results//IDL_2D_1M_ALPHA_DYN/")
+with open("IDL_2D_1M_ALPHA_DYN.csv") as csvfile:
+    reader = csv.DictReader(csvfile)
+    lines = [row for row in reader]
+parameters = ['ALPHA_DYN']
+domains = {parameter :[k[parameter] for k in lines] for parameter in parameters}
+study = ParStudy(par=(parameters))
+for parameter in parameters:
+    study.define(DISCRETE,par=parameter, domain=domains[parameter])
+for parameter in parameters:
+    study.sample(INTERVAL, interval=1, par=parameter)
+study.combine(TUPLE, name="model")
+study.generate(template="IDL_2D_1M_ALPHA_DYN")

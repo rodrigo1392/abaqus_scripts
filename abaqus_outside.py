@@ -12,10 +12,10 @@ import pandas as pd
 import pprint
 import subprocess
 import shutil
-from .tools_submodule import databases_tools as db
-from .tools_submodule import filesystem_tools as ft
-from .tools_submodule import strings_tools as st
-from .tools_submodule import math_tools as mt
+from tools_submodule import databases_tools as db
+from tools_submodule import filesystem_tools as ft
+from tools_submodule import strings_tools as st
+from tools_submodule import math_tools as mt
 from pathlib import Path
 
 
