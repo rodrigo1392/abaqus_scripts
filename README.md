@@ -1,5 +1,5 @@
 <meta name='keywords'
- content='Abaqus, plugins, Abaqus FEA, Abaqus CAE, FEA, Structural Engineering, Structural Software, FE Software, Simulia, Simulia Software, Python plugins, Python automation, FE automation, Abaqus scripts, Abaqus parametric analysis'/>
+ content='abaqus, abaqus python, abaqus scripts, abaqus github, abaqus tools, Abaqus, plugins, Abaqus FEA, Abaqus CAE, FEA, Structural Engineering, Structural Software, FE Software, Simulia, Simulia Software, Python plugins, Python automation, FE automation, Abaqus scripts, Abaqus parametric analysis'/>
 
 # Abaqus scripts
 Python scripts to automate the boring stuff in everyday use of Simulia Abaqus, from opening the GUI to controlling parametric analysis.
