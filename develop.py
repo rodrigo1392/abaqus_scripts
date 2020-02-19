@@ -1,3 +1,15 @@
+"""Temporal developing functions to be called by Abaqus CAE.
+
+    Any functionality being developed for its use within Abaqus
+    interpreter can be placed in this script, as this file can be
+    modified on the fly and called again for testing, without having to
+    close and open an new Abaqus session.
+
+    Developed by Rodrigo Rivero.
+    https://github.com/rodrigo1392
+
+    """
+
 print('***** EXECUTING DEVELOP FILE *****')
 #import abaqus_inside
 import collections
@@ -22,7 +34,7 @@ def models_upgrade_from_folder(models_folder, recursive=False, print_every=1):
     for job_number, model_key in enumerate(models_list):
         # Option to print less
         if divmod(job_number, print_every)[1]==0:
-             print('Processing', model_key, job_number + 1, 'of', len(models_list))
+            print('Processing', model_key, job_number + 1, 'of', len(models_list))
         new_name = model_key
         old_name = model_key.replace('.cae', '-old.cae')
         print(('acaaaaaa', model_key, temp_name))

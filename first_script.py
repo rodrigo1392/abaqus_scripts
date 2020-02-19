@@ -1,5 +1,11 @@
-print(files_with_extension_lister(r'C:\abaqus_temp\abaqus_scripts', ['py']))
-a = mesh_extract_set_nodes(odbs_retrieve_odb_name(0), 'CROWN_OUT')
-print(a, type(a))
+"""Script to be called by Abaqus CAE upon a session starting.
 
-print(a)
+    This script is meant to be called upon Abaqus opening a new session,
+    to run batch commands automatically.
+
+    Developed by Rodrigo Rivero.
+    https://github.com/rodrigo1392
+
+    """
+
+print('EXECUTING FIRST SCRIPT')

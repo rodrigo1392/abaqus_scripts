@@ -1,48 +1,77 @@
-""" Macros functions to be used in Abaqus environment.
-    abaqusMacros.cfg file is expected to be in the same folder as
-    this script.
-    Ideally, put both in the /site folder of your Abaqus installation,
-    otherwise you could place them in the working directory, but if
-    the interpreter switches to another directory, it won't be able
-    to read the macros.
-    
+"""Macros functions to be called within Abaqus CAE session.
+
+    Configuration abaqusMacros.cfg file is expected to be in the same
+    folder as this script. Ideally, both should be located the /site
+    folder of SIMULIA Abaqus installation. They can also be placed in
+    the working directory, but if the interpreter switches to another
+    folder, it won't be able to this file.
+
     Developed by Rodrigo Rivero.
-    https://github.com/rodrigo1392"""
+    https://github.com/rodrigo1392
+
+    """
+
 from __future__ import print_function
 from abaqus import *
 from abaqusConstants import *
 import __main__
+
 import ConfigParser as configparser
 
 
-config_file_path = __file__.replace('.py', '.cfg').replace('.pyc', '.cfg').replace('.cfgc', '.cfg')
-cfg = configparser.ConfigParser()                                                # Start configfile engine
-cfg.read(config_file_path)                                                       # Read input file
-CPUS_NUMBER = eval(cfg.get('MACROS', 'CPUS_NUMBER'))                             # Extract input data and process it
+# Set configuration file path, read it and load configuration data.
+config_file_path = __file__.replace('.py', '.cfg').replace('.pyc', '.cfg')
+config_file_path = config_file_path.replace().replace('.cfgc', '.cfg')
+cfg = configparser.ConfigParser()
+cfg.read(config_file_path)
+CPUS_NUMBER = eval(cfg.get('MACROS', 'CPUS_NUMBER'))
 
 
-def jobs_create_4all_models():
-    """
-    Creates a Job for every Model in the Database, if it doesn`t exist yet,
-    with the assigned characteristics.
-    """
-    global CPUS_NUMBER
-    for model_key, model in mdb.models.items():
-        model_name = model_key.replace(' ', '_')                                 # Replace blank spaces for underscores
-        if model_name not in mdb.jobs.keys():                                    # Create the Job using each Model name
-            jobs_create_4all_models_with_overwrite()
+def clean_all_xydata():
+    """Delete all xyData in current Session """
+    for xydata_key, xydata in session.xyDataObjects.items():
+        del xydata
     return
 
 
-def jobs_create_4all_models_with_overwrite():
-    """
-    Creates a Job for every Model in the Database, with the
-    assigned characteristics.
-    """
+def clean_all_xyplots():
+    """Delete all xyPlots in current Session """
+    for xyplot_key, xyplot in session.xyPlots.items():
+        del xyplot
+    return
+
+
+def close_all_odbs():
+    """Close all opened Odb objects in current Session."""
+    for odb_key, odb in session.odbs.items():
+        odb.close()
+    return
+
+
+def create_jobs_not_overwriting():
+    """Create a job for each model in database, without overwriting."""
     global CPUS_NUMBER
+
+    # Iterate over models in current database and create a job for each
+    # of them model, naming it the same as the model name, replacing
+    # any blank spaces for underscores.
     for model_key, model in mdb.models.items():
-        model_name = model_key.replace(' ', '_')                                 # Replace blank spaces for underscores
-        mdb.Job(name=str(model_name), model=model, description='',               # Create the Job using each Model name
+        model_name = model_key.replace(' ', '_')
+        if model_name not in mdb.jobs.keys():
+            create_jobs_overwriting()
+    return
+
+
+def create_jobs_overwriting():
+    """Create a job for each model in database, with overwriting."""
+    global CPUS_NUMBER
+
+    # Iterate over models in current database and create a job for each
+    # of them model, naming it the same as the model name, replacing
+    # any blank spaces for underscores.
+    for model_key, model in mdb.models.items():
+        model_name = model_key.replace(' ', '_')
+        mdb.Job(name=str(model_name), model=model, description='',
                 type=ANALYSIS, atTime=None, waitMinutes=0, waitHours=0,
                 queue=None, memory=90, memoryUnits=PERCENTAGE,
                 getMemoryFromAnalysis=True, explicitPrecision=SINGLE,
@@ -53,55 +82,36 @@ def jobs_create_4all_models_with_overwrite():
     return
 
 
-def jobs_run_all():
-    """ Runs all the Jobs contained in the Database, one at a time. """
-    jobs_count = 1
-    for job_key, job in mdb.jobs.items():                                        # Iterate trough Model Jobs
-        job.submit(consistencyChecking=OFF)                                      # Run job
-        print('Job number ', str(jobs_count), ' of: ', str(len(mdb.jobs)))       # Report job number and remaining
-        job.waitForCompletion()                                                  # Wait for completion
-        jobs_count += 1
-    return
-
-
-def jobs_run_not_completed():
-    """ Runs all Jobs contained in the Database which status in not
-        COMPLETED, one at a time. """
-    jobs_count = 1
-    for job_key, job in mdb.jobs.items():                                        # Iterate trough Model Jobs
-        if job.status != COMPLETED:                                              # Verify job status
-            job.submit(consistencyChecking=OFF)                                  # If not Completed, run it
-            print('Job number ', str(jobs_count))                                # Report job number and remaining
-            job.waitForCompletion()                                              # Wait for completion
-            jobs_count += 1
-    return
-
-
-def models_replace_blank_spaces():
-    """ Replaces all blank spaces in the names of the Models
-        present in the current Database for underscores. """
+def replace_models_names_blanks():
+    """Replace blank for underscores in all models names."""
     for model_key in mdb.models.keys():
         mdb.models.changeKey(fromName=model_key,
                              toName=model_key.replace(" ", "_"))
     return
 
 
-def odbs_close_all_odbs():
-    """ Closes all Odbs that are open on the current Session. """
-    for odb_key, odb in session.odbs.items():
-        odb.close()
+def run_all_jobs():
+    """Run all jobs in current database, one at a time."""
+    # Iterate over jobs, run them, report and wait for completion.
+    jobs_count = 1
+    for job_key, job in mdb.jobs.items():
+        job.submit(consistencyChecking=OFF)
+        print('Job number ', str(jobs_count), ' of: ', str(len(mdb.jobs)))
+        job.waitForCompletion()
+        jobs_count += 1
     return
 
 
-def xydata_clean_all_xydata():
-    """ Erases all xyData from the current Session """
-    for xydata_key, xydata in session.xyDataObjects.items():
-        del xydata
-    return
+def run_not_completed_jobs():
+    """Run all not completed jobs in current database, one at a time."""
+    # Iterate over jobs, run them, report and wait for completion.
+    jobs_count = 1
+    for job_key, job in mdb.jobs.items():
 
-
-def xyplots_clean_all_xyplots():
-    """ Erases all xyPlots from the current Session. """
-    for xyplot_key, xyplot in session.xyPlots.items():
-        del xyplot
+        # Verify job status. Pass if already completed.
+        if job.status != COMPLETED:
+            job.submit(consistencyChecking=OFF)
+            print('Job number ', str(jobs_count))
+            job.waitForCompletion()
+            jobs_count += 1
     return
